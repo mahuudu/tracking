@@ -1,18 +1,22 @@
 {
   "name": "@mahuudu/tracking",
   "version": "1.0.0",
-  "description": "Browser-based tracking framework for Next.js/React applications with attribution tracking, page value, and funnel analytics",
+  "description": "Browser-based tracking framework for Next.js/React and vanilla JS with UTM tracking, event tracking, attribution, page value, and funnel analytics",
   "keywords": [
     "tracking",
     "analytics",
     "attribution",
     "funnel",
     "utm",
+    "utm-tracking",
+    "marketing-analytics",
+    "pageview",
+    "event-tracking",
     "react",
     "nextjs",
     "typescript"
   ],
-  "author": "",
+  "author": "mahuudu",
   "license": "MIT",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -39,7 +43,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/mahuudu/tracking"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -62,4 +66,3 @@
     "typescript": "^5.0.0"
   }
 }
-
