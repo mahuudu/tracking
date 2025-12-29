@@ -45,6 +45,9 @@
     "type": "git",
     "url": "https://github.com/mahuudu/tracking"
   },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepublishOnly": "npm run build",
