@@ -1,0 +1,61 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { track, page, funnel, identify, isTrackingInitialized, onTrackingReady, setContext, getTrackingVersion } from '../browser/adapter';
+
+export function useTracking() {
+  const [ready, setReady] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    return isTrackingInitialized();
+  });
+
+  const [version] = useState(() => getTrackingVersion());
+
+  useEffect(() => {
+    if (ready) {
+      return;
+    }
+
+    const unsubscribe = onTrackingReady(() => {
+      setReady(true);
+    });
+
+    return unsubscribe;
+  }, [ready]);
+
+  const trackEvent = useCallback((name: string, properties?: Record<string, any>) => {
+    track(name, properties);
+  }, []);
+
+  const trackPage = useCallback((options?: { path?: string; title?: string; value?: number }) => {
+    page(options);
+  }, []);
+
+  const trackFunnel = useCallback((
+    step: string,
+    options?: { stepNumber: number; value?: number; properties?: Record<string, any> }
+  ) => {
+    funnel(step, options);
+  }, []);
+
+  const identifyUser = useCallback((userId: string, traits?: Record<string, any>) => {
+    identify(userId, traits);
+  }, []);
+
+  const setGlobalContext = useCallback((context: Record<string, any>) => {
+    setContext(context);
+  }, []);
+
+  return {
+    ready,
+    version,
+    track: trackEvent,
+    page: trackPage,
+    funnel: trackFunnel,
+    identify: identifyUser,
+    setContext: setGlobalContext,
+  };
+}
+

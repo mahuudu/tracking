@@ -1,0 +1,46 @@
+# Development files
+*.log
+*.tsbuildinfo
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Testing
+**/__tests__/
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+coverage/
+.nyc_output/
+
+# Build artifacts (source maps excluded, but dist/ is included)
+build/
+*.map
+
+# Config files (keep only what's needed)
+.eslintrc*
+.prettierrc*
+.editorconfig
+jest.config.*
+vitest.config.*
+
+# Documentation (keep README.md, exclude others)
+TESTING_GUIDE.md
+CHANGELOG.md
+*.md
+!README.md
+
+# Misc
+.env*
+node_modules/
+.cache/
+
