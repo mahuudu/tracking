@@ -22,9 +22,10 @@
 coverage/
 .nyc_output/
 
-# Build artifacts (source maps excluded, but dist/ is included)
+# Build artifacts
 build/
-*.map
+**/*.map
+**/*.map.*
 
 # Config files (keep only what's needed)
 .eslintrc*

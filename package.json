@@ -36,8 +36,8 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "dist/**/*",
-    "src/**/*",
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
     "README.md",
     "LICENSE"
   ],
@@ -46,7 +46,8 @@
     "url": "https://github.com/mahuudu/tracking"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
