@@ -102,7 +102,11 @@ export function getSessionId(): string | null {
 
   try {
     const data = getLocalStorage('_utm_tracking_session_id');
-    return data || null;
+    if (!data) {
+      return null;
+    }
+    const session = JSON.parse(data);
+    return session?.id || null;
   } catch {
     return null;
   }

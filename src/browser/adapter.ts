@@ -225,9 +225,57 @@ class TrackingAdapter {
         });
       }
 
+      // If no firstTouch exists yet, capture a default attribution even for internal navigation
+      // This ensures we always have attribution data to send to backend
       if (!shouldCapture) {
-        if (this.config?.debug) {
-          console.log('[Tracking] Skipping attribution capture (internal navigation or reload)');
+        if (!existingFirstTouch) {
+          // Capture default attribution when no firstTouch exists
+          const defaultAttribution = parseAttributionFromURL(url, referrer, this.config?.customUTM);
+          
+          if (this.config?.debug) {
+            console.log('[Tracking] Capturing default attribution (no firstTouch yet):', defaultAttribution);
+          }
+          
+          this.setFirstTouch(defaultAttribution);
+          this.setLastTouch(defaultAttribution);
+          
+          const existingJourney = this.getJourney();
+          const shouldAppend = shouldAppendToJourney(defaultAttribution, existingJourney[existingJourney.length - 1] || null);
+          
+          if (this.config?.debug) {
+            console.log('[Tracking] Journey append check:', {
+              existingJourneyLength: existingJourney.length,
+              shouldAppend,
+              lastJourneyEntry: existingJourney[existingJourney.length - 1] || null,
+            });
+          }
+          
+          if (shouldAppend) {
+            const journeyTTL = getJourneyTTL(this.config?.attributionTTL?.journeyDays);
+            const maxJourneySize = this.config?.maxJourneySize;
+            const updatedJourney = appendToJourney(existingJourney, defaultAttribution, journeyTTL, maxJourneySize);
+            
+            if (this.config?.debug) {
+              console.log('[Tracking] Setting journey:', updatedJourney);
+            }
+            
+            this.setJourney(updatedJourney);
+          } else if (existingJourney.length === 0) {
+            // If journey is empty and shouldAppend is false, still create initial journey entry
+            // This can happen if shouldAppendToJourney returns false for some reason
+            const journeyTTL = getJourneyTTL(this.config?.attributionTTL?.journeyDays);
+            const initialJourney = appendToJourney([], defaultAttribution, journeyTTL, this.config?.maxJourneySize);
+            
+            if (this.config?.debug) {
+              console.log('[Tracking] Creating initial journey entry:', initialJourney);
+            }
+            
+            this.setJourney(initialJourney);
+          }
+        } else {
+          if (this.config?.debug) {
+            console.log('[Tracking] Skipping attribution capture (internal navigation or reload)');
+          }
         }
         return;
       }
@@ -245,11 +293,36 @@ class TrackingAdapter {
       this.setLastTouch(attribution);
 
       const existingJourney = this.getJourney();
-      if (shouldAppendToJourney(attribution, existingJourney[existingJourney.length - 1] || null)) {
+      const shouldAppend = shouldAppendToJourney(attribution, existingJourney[existingJourney.length - 1] || null);
+      
+      if (this.config?.debug) {
+        console.log('[Tracking] Journey append check:', {
+          existingJourneyLength: existingJourney.length,
+          shouldAppend,
+          lastJourneyEntry: existingJourney[existingJourney.length - 1] || null,
+        });
+      }
+      
+      if (shouldAppend) {
         const journeyTTL = getJourneyTTL(this.config?.attributionTTL?.journeyDays);
         const maxJourneySize = this.config?.maxJourneySize;
         const updatedJourney = appendToJourney(existingJourney, attribution, journeyTTL, maxJourneySize);
+        
+        if (this.config?.debug) {
+          console.log('[Tracking] Setting journey:', updatedJourney);
+        }
+        
         this.setJourney(updatedJourney);
+      } else if (existingJourney.length === 0) {
+        // If journey is empty and shouldAppend is false, still create initial journey entry
+        const journeyTTL = getJourneyTTL(this.config?.attributionTTL?.journeyDays);
+        const initialJourney = appendToJourney([], attribution, journeyTTL, this.config?.maxJourneySize);
+        
+        if (this.config?.debug) {
+          console.log('[Tracking] Creating initial journey entry:', initialJourney);
+        }
+        
+        this.setJourney(initialJourney);
       }
     } catch (e) {
       const errorContext = {
@@ -507,6 +580,22 @@ class TrackingAdapter {
         console.error('[Tracking] Invalid page value:', pageValue);
       }
       return;
+    }
+
+    // Check if we should capture attribution on this page (e.g., if URL has UTM params)
+    // This allows attribution to be captured when navigating between pages
+    if (typeof window !== 'undefined') {
+      const url = getCurrentURL();
+      const referrer = getReferrer();
+      const hasUTM = hasUTMParameters(url, this.config?.customUTM);
+      
+      // Capture attribution if URL has UTM params (even for internal navigation)
+      if (hasUTM) {
+        if (this.config?.debug) {
+          console.log('[Tracking] Page has UTM params, capturing attribution on page navigation');
+        }
+        this.captureAttribution();
+      }
     }
 
     const pageEvent = createPageViewEvent(path, title, pageValue);

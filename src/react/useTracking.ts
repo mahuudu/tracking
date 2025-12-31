@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { track, page, funnel, identify, isTrackingInitialized, onTrackingReady, setContext, getTrackingVersion } from '../browser/adapter';
+import { getJourneyData, setJourney, clearJourney } from '../browser/getTrackingData';
 
 export function useTracking() {
   const [ready, setReady] = useState(() => {
@@ -46,6 +47,18 @@ export function useTracking() {
 
   const setGlobalContext = useCallback((context: Record<string, any>) => {
     setContext(context);
+  }, []);
+
+  const getJourney = useCallback(() => {
+    return getJourneyData();
+  }, []);
+
+  const updateJourney = useCallback((journey: any[]) => {
+    return setJourney(journey);
+  }, []);
+
+  const clearJourneyData = useCallback(() => {
+    return clearJourney();
   }, []);
 
   return {
