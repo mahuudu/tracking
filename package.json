@@ -1,6 +1,6 @@
 {
   "name": "@mahuudu/tracking",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Browser-based tracking framework for Next.js/React and vanilla JS with UTM tracking, event tracking, attribution, page value, and funnel analytics",
   "keywords": [
     "tracking",
