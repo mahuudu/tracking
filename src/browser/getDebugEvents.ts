@@ -1,31 +1,34 @@
 import { getDebugEvents, clearDebugEvents } from './debug';
 import type { EnrichedEvent } from '../core/types';
 
-export function getAllDebugEvents(): EnrichedEvent[] {
-  return getDebugEvents();
+export async function getAllDebugEvents(): Promise<EnrichedEvent[]> {
+  const events = await getDebugEvents();
+  return events.map(({ id, expiresAt, event }) => event);
 }
 
-export function clearAllDebugEvents(): void {
-  clearDebugEvents();
+export async function clearAllDebugEvents(): Promise<void> {
+  await clearDebugEvents();
 }
 
-export function getDebugEventsSummary(): {
+export async function getDebugEventsSummary(): Promise<{
   total: number;
   byType: Record<string, number>;
   latest: EnrichedEvent | null;
-} {
-  const events = getDebugEvents();
+}> {
+  const events = await getDebugEvents();
 
   const byType: Record<string, number> = {};
-  events.forEach(event => {
-    const type = event.event.type;
+  events.forEach(item => {
+    const type = item.event.event.type;
     byType[type] = (byType[type] || 0) + 1;
   });
+
+  const latest = events[0];
 
   return {
     total: events.length,
     byType,
-    latest: events[0] || null,
+    latest: latest ? latest.event : null,
   };
 }
 

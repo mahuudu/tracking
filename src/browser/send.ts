@@ -28,16 +28,22 @@ export async function sendEvent(
       }
 
       if (response.status >= 400 && response.status < 500) {
+        console.warn(`[Tracking] API returned ${response.status} for ${endpoint}`);
         return false;
       }
 
       if (i < retries - 1) {
-        await delay(Math.pow(2, i) * RETRY_DELAY_BASE);
+        const baseDelay = Math.pow(2, i) * RETRY_DELAY_BASE;
+        const jitter = Math.random() * 1000;
+        await delay(baseDelay + jitter);
         continue;
       }
     } catch (e) {
+      console.error(`[Tracking] Error sending event to ${endpoint}:`, e);
       if (i < retries - 1) {
-        await delay(Math.pow(2, i) * RETRY_DELAY_BASE);
+        const baseDelay = Math.pow(2, i) * RETRY_DELAY_BASE;
+        const jitter = Math.random() * 1000;
+        await delay(baseDelay + jitter);
         continue;
       }
     }
@@ -53,8 +59,13 @@ export function sendEventWithBeacon(event: EnrichedEvent, endpoint: string): boo
 
   try {
     const blob = new Blob([JSON.stringify(event)], { type: 'application/json' });
-    return navigator.sendBeacon(endpoint, blob);
-  } catch {
+    const result = navigator.sendBeacon(endpoint, blob);
+    if (!result) {
+      console.warn(`[Tracking] sendBeacon returned false for ${endpoint}`);
+    }
+    return result;
+  } catch (error) {
+    console.error('[Tracking] sendBeacon error:', error);
     return false;
   }
 }

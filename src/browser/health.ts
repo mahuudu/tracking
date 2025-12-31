@@ -39,7 +39,7 @@ function getStorageUsage(): number {
   }
 }
 
-export function getTrackingHealth(): {
+export async function getTrackingHealth(): Promise<{
   initialized: boolean;
   queueSize: number;
   lastEventTime: number | null;
@@ -47,8 +47,8 @@ export function getTrackingHealth(): {
     available: boolean;
     usage: number;
   };
-} {
-  const debugEvents = typeof window !== 'undefined' ? getDebugEvents() : [];
+}> {
+  const debugEvents = typeof window !== 'undefined' ? await getDebugEvents() : [];
   const lastEvent = debugEvents.length > 0 ? debugEvents[0] : null;
 
   let queueSize = 0;
@@ -63,7 +63,7 @@ export function getTrackingHealth(): {
   return {
     initialized: isTrackingInitialized(),
     queueSize,
-    lastEventTime: lastEvent?.event.timestamp ?? null,
+    lastEventTime: lastEvent ? (lastEvent.event as unknown as { timestamp: number }).timestamp : null,
     storage: {
       available: isStorageAvailable(),
       usage: getStorageUsage(),

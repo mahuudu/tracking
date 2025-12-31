@@ -105,6 +105,8 @@ export function getSessionId(): string | null {
     if (!data) {
       return null;
     }
+    
+    // Parse JSON to get session id
     const session = JSON.parse(data);
     return session?.id || null;
   } catch {
@@ -112,31 +114,35 @@ export function getSessionId(): string | null {
   }
 }
 
-export function getTrackingData(): {
+export async function getTrackingData(): Promise<{
   timestamp: string;
   sessionId: string | null;
   attribution: AttributionData;
   debugEvents: EnrichedEvent[];
-} {
+}> {
+  const debugEvents = typeof window !== 'undefined' 
+    ? (await getDebugEvents()).map(({ id, expiresAt, event }) => event)
+    : [];
+    
   return {
     timestamp: new Date().toISOString(),
     sessionId: getSessionId(),
     attribution: getAllAttributionData(),
-    debugEvents: typeof window !== 'undefined' ? getDebugEvents() : [],
+    debugEvents,
   };
 }
 
-export function exportTrackingDataAsJSON(): string {
-  const data = getTrackingData();
+export async function exportTrackingDataAsJSON(): Promise<string> {
+  const data = await getTrackingData();
   return JSON.stringify(data, null, 2);
 }
 
-export function downloadTrackingData(filename: string = `tracking-data-${Date.now()}.json`): void {
+export async function downloadTrackingData(filename: string = `tracking-data-${Date.now()}.json`): Promise<void> {
   if (typeof window === 'undefined') {
     return;
   }
 
-  const json = exportTrackingDataAsJSON();
+  const json = await exportTrackingDataAsJSON();
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

@@ -16,6 +16,24 @@ function AutoPageViewTracker() {
   return null;
 }
 
+function deepEqual(obj1: any, obj2: any): boolean {
+  if (obj1 === obj2) return true;
+  if (obj1 == null || obj2 == null) return false;
+  if (typeof obj1 !== 'object' || typeof obj2 !== 'object') return false;
+  
+  const keys1 = Object.keys(obj1);
+  const keys2 = Object.keys(obj2);
+  
+  if (keys1.length !== keys2.length) return false;
+  
+  for (const key of keys1) {
+    if (!keys2.includes(key)) return false;
+    if (!deepEqual(obj1[key], obj2[key])) return false;
+  }
+  
+  return true;
+}
+
 function isConfigEqual(a: TrackingConfig, b: TrackingConfig): boolean {
   return (
     a.apiEndpoint === b.apiEndpoint &&
@@ -23,10 +41,14 @@ function isConfigEqual(a: TrackingConfig, b: TrackingConfig): boolean {
     a.debug === b.debug &&
     a.storage === b.storage &&
     a.disableApi === b.disableApi &&
-    JSON.stringify(a.pageValues) === JSON.stringify(b.pageValues) &&
-    JSON.stringify(a.pageOverrides) === JSON.stringify(b.pageOverrides) &&
-    JSON.stringify(a.attributionTTL) === JSON.stringify(b.attributionTTL) &&
-    JSON.stringify(a.customUTM) === JSON.stringify(b.customUTM)
+    a.samplingRate === b.samplingRate &&
+    a.maxJourneySize === b.maxJourneySize &&
+    a.useFetchInsteadOfBeacon === b.useFetchInsteadOfBeacon &&
+    deepEqual(a.pageValues, b.pageValues) &&
+    deepEqual(a.pageOverrides, b.pageOverrides) &&
+    deepEqual(a.attributionTTL, b.attributionTTL) &&
+    deepEqual(a.customUTM, b.customUTM) &&
+    deepEqual(a.errorReporting, b.errorReporting)
   );
 }
 

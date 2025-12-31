@@ -16,15 +16,17 @@ export function validatePageValue(
     };
   }
 
-  if (value < 0 || value > 100) {
+  // Relax validation: Allow any non-negative value (not limited to 0-100)
+  if (value < 0) {
     return {
       valid: false,
-      normalizedValue: Math.max(0, Math.min(100, value)),
-      error: 'Page value must be between 0 and 100',
+      normalizedValue: 0,
+      error: 'Page value must be non-negative',
     };
   }
 
-  const normalizedValue = Math.round(value);
+  // Round to 2 decimal places for precision
+  const normalizedValue = Math.round(value * 100) / 100;
 
   if (!path || typeof path !== 'string' || path.trim() === '') {
     return {

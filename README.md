@@ -25,8 +25,9 @@ Unlike heavy analytics platforms, this library is lightweight, gives you full co
 - ✅ **Framework Agnostic** - Works with React/Next.js or vanilla JavaScript
 - ✅ **TypeScript Native** - Full type safety and excellent IDE support
 - ✅ **Flexible Attribution** - Supports standard UTM, custom parameters, and complex attribution models
-- ✅ **Developer-Friendly** - Built-in debug mode, local storage for testing, and comprehensive documentation
-- ✅ **Production-Ready** - Battle-tested architecture with proper error handling and session management
+- ✅ **Offline-First** - Automatic event queuing with IndexedDB, auto-sync when connection restored
+- ✅ **Developer-Friendly** - Built-in debug mode, IndexedDB storage for testing, and comprehensive documentation
+- ✅ **Production-Ready** - Battle-tested architecture with proper error handling, session management, and offline support
 
 Perfect for teams who want full control over their analytics data without relying on external services like Google Analytics or Mixpanel.
 
@@ -43,12 +44,13 @@ pnpm add @mahuudu/tracking
 ## Features
 
 - ✅ **Attribution Tracking**: First-touch (90d), last-touch (30d), journey (30d)
-- ✅ **Page Value**: Assign business value (0-100) for each page
+- ✅ **Page Value**: Assign business value (0-100+) for each page
 - ✅ **Funnel Tracking**: Track conversion funnel steps
 - ✅ **Custom Events**: Track any user interaction
 - ✅ **UTM Tracking**: Auto-capture UTM parameters + custom UTM support
+- ✅ **Offline Support**: Automatic event queuing with IndexedDB when offline, auto-sync when online
 - ✅ **TypeScript**: Full type safety
-- ✅ **Debug Mode**: Built-in debugging tools
+- ✅ **Debug Mode**: Built-in debugging tools with automatic expiration (7 days)
 
 ## Quick Start
 
@@ -166,7 +168,7 @@ Initialize tracking with configuration.
 
 - `apiEndpoint` (optional): Backend API endpoint. If not provided, events are only stored in debug storage
 - `autoPageView` (optional): Auto track page views (default: `false`)
-- `pageValues` (optional): Map path → value (0-100). Example: `{ '/': 10, '/products': 30 }`
+- `pageValues` (optional): Map path → value (0-100+). Example: `{ '/': 10, '/products': 30 }`. Values can exceed 100 for high-value pages.
 - `pageOverrides` (optional): Override page tracking behavior per path
   ```typescript
   pageOverrides: {
@@ -459,10 +461,12 @@ initTracking({
 ```typescript
 import { getAllDebugEvents, getDebugEventsSummary, clearAllDebugEvents } from '@mahuudu/tracking'
 
-getAllDebugEvents()        // Array of all events
-getDebugEventsSummary()   // { total, byType, latest }
-clearAllDebugEvents()     // Clear all debug events
+await getAllDebugEvents()        // Array of all events (async)
+await getDebugEventsSummary()   // { total, byType, latest } (async)
+await clearAllDebugEvents()     // Clear all debug events (async)
 ```
+
+**Note:** Debug events are stored in IndexedDB and automatically expire after 7 days. Events are sorted by timestamp (newest first).
 
 **Get attribution data:**
 ```typescript
@@ -485,8 +489,8 @@ getSessionId()             // Current session ID (string | null)
 ```typescript
 import { getTrackingData, exportTrackingDataAsJSON, downloadTrackingData } from '@mahuudu/tracking'
 
-// Get as object
-const data = getTrackingData()
+// Get as object (async)
+const data = await getTrackingData()
 // Returns: {
 //   timestamp: '2025-12-29T...',
 //   sessionId: '...',
@@ -494,18 +498,18 @@ const data = getTrackingData()
 //   debugEvents: [...]
 // }
 
-// Export as JSON string
-const json = exportTrackingDataAsJSON()
+// Export as JSON string (async)
+const json = await exportTrackingDataAsJSON()
 
-// Download as file
-downloadTrackingData('my-tracking-data.json')
+// Download as file (async)
+await downloadTrackingData('my-tracking-data.json')
 ```
 
 **Get system health:**
 ```typescript
 import { getTrackingHealth } from '@mahuudu/tracking'
 
-const health = getTrackingHealth()
+const health = await getTrackingHealth()
 // Returns: {
 //   initialized: boolean,
 //   queueSize: number,
@@ -603,10 +607,43 @@ customParams: {
 // Enable debug mode
 initTracking({ apiEndpoint: '/api/track', debug: true })
 
-// Check data
+// Check data (async)
 import { getTrackingData, getTrackingHealth } from '@mahuudu/tracking'
-getTrackingHealth() // Check system health
-getTrackingData()   // Get all tracking data
+await getTrackingHealth() // Check system health
+await getTrackingData()   // Get all tracking data
+```
+
+## Offline Support
+
+The library automatically handles offline scenarios:
+
+- **When offline**: Events are queued in IndexedDB (`tracking_storage.offline_events`)
+- **When online**: Events are automatically synced to your backend
+- **Retry logic**: Failed events are retried up to 3 times before being discarded
+- **No data loss**: All events are preserved until successfully sent
+
+**Manual sync:**
+```typescript
+import { syncOfflineEvents, isOnline, getOfflineEvents } from '@mahuudu/tracking'
+
+// Check if online
+if (isOnline()) {
+  // Get pending events
+  const pending = await getOfflineEvents()
+  console.log(`${pending.length} events pending sync`)
+}
+
+// Manual sync (usually automatic)
+await syncOfflineEvents(async (event, endpoint) => {
+  // Your custom send logic
+  return await fetch(endpoint, { method: 'POST', body: JSON.stringify(event) }).then(r => r.ok)
+})
+```
+
+**Storage details:**
+- Offline events: IndexedDB store `offline_events` (auto-cleaned after successful sync)
+- Debug events: IndexedDB store `debug_events` (auto-expire after 7 days, max 50 events)
+- Attribution: localStorage/cookies (based on `storage` config)
 ```
 
 ## Troubleshooting
@@ -638,8 +675,8 @@ getTrackingData()   // Get all tracking data
    // Check initialization
    console.log('Initialized:', isTrackingInitialized())
    
-   // Check health
-   const health = getTrackingHealth()
+   // Check health (async)
+   const health = await getTrackingHealth()
    console.log('Health:', health)
    // {
    //   initialized: true,
@@ -664,10 +701,11 @@ src/
 │   └── event.ts       # Event creation & validation
 ├── browser/           # Browser adapter (main)
 │   ├── adapter.ts     # Main tracking adapter
-│   ├── storage.ts     # localStorage operations
+│   ├── storage.ts     # localStorage operations (attribution data)
 │   ├── cookie.ts      # Cookie operations
 │   ├── url.ts         # URL parsing
 │   ├── send.ts        # API calls
+│   ├── offline.ts     # IndexedDB offline queue & debug storage
 │   └── debug.ts       # Debug helpers
 ├── react/             # React helpers (optional)
 │   ├── useTracking.ts
@@ -677,6 +715,12 @@ src/
 ```
 
 See [source code](https://github.com/mahuudu/tracking/tree/main/tracking/src) for more details.
+
+### Storage Architecture
+
+- **Attribution Data** (firstTouch, lastTouch, journey): Stored in localStorage/cookies
+- **Offline Events**: Stored in IndexedDB (`tracking_storage.offline_events`) - auto-sync when online
+- **Debug Events**: Stored in IndexedDB (`tracking_storage.debug_events`) - auto-expire after 7 days
 
 ## License
 

@@ -1,52 +1,26 @@
 import type { EnrichedEvent } from '../core/types';
+import { 
+  saveDebugEventToIndexedDB, 
+  getDebugEventsFromIndexedDB, 
+  clearDebugEventsFromIndexedDB 
+} from './offline';
 
-const DEBUG_STORAGE_KEY = '_utm_tracking_debug_events';
-const MAX_DEBUG_EVENTS = 50;
-
-export function saveDebugEvent(event: EnrichedEvent): void {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    return;
-  }
-
-  try {
-    const existing = getDebugEvents();
-    existing.unshift(event);
-
-    if (existing.length > MAX_DEBUG_EVENTS) {
-      existing.pop();
-    }
-
-    window.localStorage.setItem(DEBUG_STORAGE_KEY, JSON.stringify(existing));
-  } catch {
-  }
+interface DebugEventWithExpiry {
+  id: string;
+  event: EnrichedEvent;
+  expiresAt: number;
 }
 
-export function getDebugEvents(): EnrichedEvent[] {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    return [];
-  }
-
-  try {
-    const data = window.localStorage.getItem(DEBUG_STORAGE_KEY);
-    if (!data) {
-      return [];
-    }
-
-    return JSON.parse(data);
-  } catch {
-    return [];
-  }
+export async function saveDebugEvent(event: EnrichedEvent): Promise<void> {
+  await saveDebugEventToIndexedDB(event);
 }
 
-export function clearDebugEvents(): void {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    return;
-  }
+export async function getDebugEvents(): Promise<DebugEventWithExpiry[]> {
+  return await getDebugEventsFromIndexedDB();
+}
 
-  try {
-    window.localStorage.removeItem(DEBUG_STORAGE_KEY);
-  } catch {
-  }
+export async function clearDebugEvents(): Promise<void> {
+  await clearDebugEventsFromIndexedDB();
 }
 
 export function logDebugEvent(event: EnrichedEvent): void {

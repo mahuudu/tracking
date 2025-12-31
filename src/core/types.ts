@@ -85,20 +85,14 @@ export interface AttributionTTLConfig {
   firstTouchDays?: number;
   lastTouchDays?: number;
   journeyDays?: number;
+  journeyDedupWindowSeconds?: number;
 }
 
 export interface CustomUTMConfig {
   enabled?: boolean;
   prefix?: string;
   allowedKeys?: string[];
-  keyMapping?: {
-    source?: string;
-    medium?: string;
-    campaign?: string;
-    term?: string;
-    content?: string;
-    [key: string]: string | undefined;
-  };
+  keyMapping?: Record<string, string>;
   customParams?: {
     enabled?: boolean;
     keys?: string[];
@@ -130,6 +124,7 @@ export interface TrackingConfig {
   maxJourneySize?: number;
   samplingRate?: number;
   errorReporting?: ErrorReporting;
+  useFetchInsteadOfBeacon?: boolean;
 }
 
 export interface FunnelStep {

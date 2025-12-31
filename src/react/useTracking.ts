@@ -69,6 +69,9 @@ export function useTracking() {
     funnel: trackFunnel,
     identify: identifyUser,
     setContext: setGlobalContext,
+    getJourney,
+    setJourney: updateJourney,
+    clearJourney: clearJourneyData,
   };
 }
 

@@ -20,6 +20,7 @@ import {
   getFirstTouchTTL,
   getLastTouchTTL,
   getJourneyTTL,
+  getJourneyDedupWindow,
 } from '../core/attribution';
 import {
   validatePageValue,
@@ -44,11 +45,13 @@ import { setCookie, getCookie } from './cookie';
 import { getCurrentURL, getReferrer, isPageReload } from './url';
 import { sendEvent, sendEventWithBeacon } from './send';
 import { saveDebugEvent, logDebugEvent } from './debug';
+import { saveEventToOfflineQueue, isOnline, syncOfflineEvents } from './offline';
 
 
 const TRACKING_VERSION = '1.0.0';
 const MAX_QUEUE_SIZE = 100;
 const QUEUE_TIMEOUT = 30000;
+const QUEUE_MAX_AGE = 5 * 60 * 1000;
 
 interface QueuedEvent {
   type: 'page' | 'funnel' | 'track';
@@ -64,6 +67,7 @@ class TrackingAdapter {
   private eventQueue: QueuedEvent[] = [];
   private globalContext: Record<string, any> = {};
   private queueTimeoutId: NodeJS.Timeout | null = null;
+  private attributionLock = false; 
 
   init(config: TrackingConfig): void {
     if (this.initialized) {
@@ -73,15 +77,23 @@ class TrackingAdapter {
       return;
     }
 
+    if (this.queueTimeoutId) {
+      clearTimeout(this.queueTimeoutId);
+      this.queueTimeoutId = null;
+    }
+
     this.config = config;
     this.context = collectContext();
-    this.context.sessionId = getOrCreateSessionId();
+
+    const sessionId = getOrCreateSessionId();
+    this.context.sessionId = sessionId;
     this.mergeGlobalContext();
 
     this.captureAttribution();
     this.initialized = true;
 
     this.flushEventQueue();
+    this.setupOfflineSync();
 
     if (config.debug) {
       console.log('[Tracking] Initialized', this.config);
@@ -108,6 +120,17 @@ class TrackingAdapter {
       return;
     }
     Object.assign(this.context, this.globalContext);
+    this.updateSessionIdIfNeeded();
+  }
+
+  private updateSessionIdIfNeeded(): void {
+    if (!this.context) {
+      return;
+    }
+    const currentSessionId = getOrCreateSessionId();
+    if (this.context.sessionId !== currentSessionId) {
+      this.context.sessionId = currentSessionId;
+    }
   }
 
   private shouldTrackPage(path: string): boolean {
@@ -162,7 +185,7 @@ class TrackingAdapter {
     const initialLength = this.eventQueue.length;
     
     this.eventQueue = this.eventQueue.filter(
-      e => now - e.queuedAt < QUEUE_TIMEOUT
+      e => now - e.queuedAt < QUEUE_MAX_AGE
     );
 
     if (this.eventQueue.length < initialLength && this.config?.debug) {
@@ -206,13 +229,23 @@ class TrackingAdapter {
       return;
     }
 
+    // Fix race condition: Prevent concurrent calls
+    if (this.attributionLock) {
+      if (this.config?.debug) {
+        console.log('[Tracking] Attribution capture already in progress, skipping...');
+      }
+      return;
+    }
+
+    this.attributionLock = true;
+
     try {
       const url = getCurrentURL();
       const referrer = getReferrer();
       const isReload = isPageReload();
 
       const existingFirstTouch = this.getFirstTouch();
-      const shouldCapture = shouldCaptureAttribution(url, referrer, existingFirstTouch, isReload, this.config?.customUTM);
+      const captureFlags = shouldCaptureAttribution(url, referrer, existingFirstTouch, isReload, this.config?.customUTM);
 
       if (this.config?.debug) {
         console.log('[Tracking] Attribution capture check:', {
@@ -221,15 +254,15 @@ class TrackingAdapter {
           hasUTM: hasUTMParameters(url, this.config?.customUTM),
           isExternalReferrer: referrer ? isExternalReferrer(referrer, url.hostname) : false,
           existingFirstTouch: !!existingFirstTouch,
-          shouldCapture,
+          captureFlags,
         });
       }
 
-      // If no firstTouch exists yet, capture a default attribution even for internal navigation
-      // This ensures we always have attribution data to send to backend
-      if (!shouldCapture) {
+      // If no attribution should be captured, skip
+      if (!captureFlags.captureFirst && !captureFlags.captureLast) {
+        // If no firstTouch exists yet, capture a default attribution even for internal navigation
+        // This ensures we always have attribution data to send to backend
         if (!existingFirstTouch) {
-          // Capture default attribution when no firstTouch exists
           const defaultAttribution = parseAttributionFromURL(url, referrer, this.config?.customUTM);
           
           if (this.config?.debug) {
@@ -240,36 +273,17 @@ class TrackingAdapter {
           this.setLastTouch(defaultAttribution);
           
           const existingJourney = this.getJourney();
-          const shouldAppend = shouldAppendToJourney(defaultAttribution, existingJourney[existingJourney.length - 1] || null);
-          
-          if (this.config?.debug) {
-            console.log('[Tracking] Journey append check:', {
-              existingJourneyLength: existingJourney.length,
-              shouldAppend,
-              lastJourneyEntry: existingJourney[existingJourney.length - 1] || null,
-            });
-          }
+          const dedupWindow = getJourneyDedupWindow(this.config?.attributionTTL?.journeyDedupWindowSeconds);
+          const shouldAppend = shouldAppendToJourney(defaultAttribution, existingJourney[existingJourney.length - 1] || null, dedupWindow);
           
           if (shouldAppend) {
             const journeyTTL = getJourneyTTL(this.config?.attributionTTL?.journeyDays);
             const maxJourneySize = this.config?.maxJourneySize;
             const updatedJourney = appendToJourney(existingJourney, defaultAttribution, journeyTTL, maxJourneySize);
-            
-            if (this.config?.debug) {
-              console.log('[Tracking] Setting journey:', updatedJourney);
-            }
-            
             this.setJourney(updatedJourney);
           } else if (existingJourney.length === 0) {
-            // If journey is empty and shouldAppend is false, still create initial journey entry
-            // This can happen if shouldAppendToJourney returns false for some reason
             const journeyTTL = getJourneyTTL(this.config?.attributionTTL?.journeyDays);
             const initialJourney = appendToJourney([], defaultAttribution, journeyTTL, this.config?.maxJourneySize);
-            
-            if (this.config?.debug) {
-              console.log('[Tracking] Creating initial journey entry:', initialJourney);
-            }
-            
             this.setJourney(initialJourney);
           }
         } else {
@@ -286,43 +300,50 @@ class TrackingAdapter {
         console.log('[Tracking] Captured attribution:', attribution);
       }
 
-      if (!existingFirstTouch) {
+
+      if (captureFlags.captureFirst) {
         this.setFirstTouch(attribution);
       }
 
-      this.setLastTouch(attribution);
 
-      const existingJourney = this.getJourney();
-      const shouldAppend = shouldAppendToJourney(attribution, existingJourney[existingJourney.length - 1] || null);
-      
-      if (this.config?.debug) {
-        console.log('[Tracking] Journey append check:', {
-          existingJourneyLength: existingJourney.length,
-          shouldAppend,
-          lastJourneyEntry: existingJourney[existingJourney.length - 1] || null,
-        });
-      }
-      
-      if (shouldAppend) {
-        const journeyTTL = getJourneyTTL(this.config?.attributionTTL?.journeyDays);
-        const maxJourneySize = this.config?.maxJourneySize;
-        const updatedJourney = appendToJourney(existingJourney, attribution, journeyTTL, maxJourneySize);
+      if (captureFlags.captureLast) {
+        this.setLastTouch(attribution);
+        
+        // Append to journey only if we're capturing attribution
+        const existingJourney = this.getJourney();
+        const dedupWindow = getJourneyDedupWindow(this.config?.attributionTTL?.journeyDedupWindowSeconds);
+        const shouldAppend = shouldAppendToJourney(attribution, existingJourney[existingJourney.length - 1] || null, dedupWindow);
         
         if (this.config?.debug) {
-          console.log('[Tracking] Setting journey:', updatedJourney);
+          console.log('[Tracking] Journey append check:', {
+            existingJourneyLength: existingJourney.length,
+            shouldAppend,
+            dedupWindowMs: dedupWindow,
+            lastJourneyEntry: existingJourney[existingJourney.length - 1] || null,
+          });
         }
         
-        this.setJourney(updatedJourney);
-      } else if (existingJourney.length === 0) {
-        // If journey is empty and shouldAppend is false, still create initial journey entry
-        const journeyTTL = getJourneyTTL(this.config?.attributionTTL?.journeyDays);
-        const initialJourney = appendToJourney([], attribution, journeyTTL, this.config?.maxJourneySize);
-        
-        if (this.config?.debug) {
-          console.log('[Tracking] Creating initial journey entry:', initialJourney);
+        if (shouldAppend) {
+          const journeyTTL = getJourneyTTL(this.config?.attributionTTL?.journeyDays);
+          const maxJourneySize = this.config?.maxJourneySize;
+          const updatedJourney = appendToJourney(existingJourney, attribution, journeyTTL, maxJourneySize);
+          
+          if (this.config?.debug) {
+            console.log('[Tracking] Setting journey:', updatedJourney);
+          }
+          
+          this.setJourney(updatedJourney);
+        } else if (existingJourney.length === 0) {
+
+          const journeyTTL = getJourneyTTL(this.config?.attributionTTL?.journeyDays);
+          const initialJourney = appendToJourney([], attribution, journeyTTL, this.config?.maxJourneySize);
+          
+          if (this.config?.debug) {
+            console.log('[Tracking] Creating initial journey entry:', initialJourney);
+          }
+          
+          this.setJourney(initialJourney);
         }
-        
-        this.setJourney(initialJourney);
       }
     } catch (e) {
       const errorContext = {
@@ -344,6 +365,8 @@ class TrackingAdapter {
       if (this.config?.errorReporting) {
         this.config.errorReporting.captureException(e instanceof Error ? e : new Error(String(e)), errorContext);
       }
+    } finally {
+      this.attributionLock = false;
     }
   }
 
@@ -521,7 +544,7 @@ class TrackingAdapter {
 
     if (this.config.debug) {
       logDebugEvent(event);
-      saveDebugEvent(event);
+      saveDebugEvent(event).catch(() => {});
     }
 
     if (this.config.disableApi || !this.config.apiEndpoint) {
@@ -531,9 +554,87 @@ class TrackingAdapter {
       return;
     }
 
-    const sent = sendEventWithBeacon(event, this.config.apiEndpoint);
-    if (!sent) {
-      await sendEvent(event, this.config.apiEndpoint);
+    if (!isOnline()) {
+      await saveEventToOfflineQueue(event, this.config.apiEndpoint);
+      if (this.config.debug) {
+        console.log('[Tracking] Offline detected, event saved to offline queue');
+      }
+      return;
+    }
+
+    if (this.config.debug) {
+      console.log('[Tracking] Sending event to:', this.config.apiEndpoint);
+    }
+
+    if (this.config.useFetchInsteadOfBeacon) {
+      if (this.config.debug) {
+        console.log('[Tracking] Using fetch instead of sendBeacon');
+      }
+      const success = await sendEvent(event, this.config.apiEndpoint);
+      if (this.config.debug) {
+        console.log('[Tracking] fetch result:', success);
+      }
+      if (!success) {
+        await saveEventToOfflineQueue(event, this.config.apiEndpoint);
+        if (this.config.debug) {
+          console.log('[Tracking] Failed to send event, saved to offline queue');
+        }
+      }
+    } else {
+      const sent = sendEventWithBeacon(event, this.config.apiEndpoint);
+      if (this.config.debug) {
+        console.log('[Tracking] sendBeacon result:', sent);
+      }
+
+      if (!sent) {
+        if (this.config.debug) {
+          console.log('[Tracking] sendBeacon failed, trying fetch...');
+        }
+        const success = await sendEvent(event, this.config.apiEndpoint);
+        if (this.config.debug) {
+          console.log('[Tracking] fetch result:', success);
+        }
+        if (!success) {
+          await saveEventToOfflineQueue(event, this.config.apiEndpoint);
+          if (this.config.debug) {
+            console.log('[Tracking] Failed to send event, saved to offline queue');
+          }
+        }
+      } else if (this.config.debug) {
+        console.log('[Tracking] Event sent via sendBeacon');
+      }
+    }
+  }
+
+  private setupOfflineSync(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handleOnline = async () => {
+      if (!this.config?.apiEndpoint) {
+        return;
+      }
+
+      const syncedCount = await syncOfflineEvents(
+        async (event, endpoint) => {
+          const sent = sendEventWithBeacon(event, endpoint);
+          if (!sent) {
+            return await sendEvent(event, endpoint);
+          }
+          return true;
+        }
+      );
+
+      if (syncedCount > 0 && this.config.debug) {
+        console.log(`[Tracking] Synced ${syncedCount} events from offline queue`);
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    
+    if (isOnline()) {
+      handleOnline();
     }
   }
 
@@ -543,8 +644,15 @@ class TrackingAdapter {
   }
 
   page(options?: { path?: string; title?: string; value?: number }): void {
+    if (this.config?.debug) {
+      console.log('[Tracking] page() called', { path: options?.path, initialized: this.initialized });
+    }
+
     if (!this.config || !this.context) {
       if (!this.initialized) {
+        if (this.config?.debug) {
+          console.log('[Tracking] Not initialized yet, queuing page event');
+        }
         this.queueEvent('page', options);
         return;
       }
@@ -604,6 +712,16 @@ class TrackingAdapter {
     this.mergeGlobalContext();
 
     const enriched = enrichEvent(pageEvent, attribution, context);
+    
+    if (this.config.debug) {
+      console.log('[Tracking] Page event created, sending to backend:', {
+        path,
+        title,
+        value: pageValue,
+        apiEndpoint: this.config.apiEndpoint,
+      });
+    }
+    
     this.sendEventToBackend(enriched);
   }
 

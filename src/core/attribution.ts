@@ -1,10 +1,20 @@
 import type { Attribution, JourneyEntry } from './types';
 
+export interface CaptureFlags {
+  captureFirst: boolean;
+  captureLast: boolean;
+}
+
 export const DEFAULT_FIRST_TOUCH_TTL_DAYS = 90;
 export const DEFAULT_LAST_TOUCH_TTL_DAYS = 30;
 export const DEFAULT_JOURNEY_TTL_DAYS = 30;
-export const JOURNEY_DEDUP_WINDOW = 5 * 60 * 1000;
+export const DEFAULT_JOURNEY_DEDUP_WINDOW_SECONDS = 90;
 export const MAX_JOURNEY_SIZE = 50;
+
+export function getJourneyDedupWindow(seconds?: number): number {
+  const dedupSeconds = seconds ?? DEFAULT_JOURNEY_DEDUP_WINDOW_SECONDS;
+  return dedupSeconds * 1000;
+}
 
 export function getFirstTouchTTL(days?: number): number {
   const ttlDays = days ?? DEFAULT_FIRST_TOUCH_TTL_DAYS;
@@ -30,24 +40,23 @@ export function shouldCaptureAttribution(
   referrer: string | null,
   existingFirstTouch: Attribution | null,
   isPageReload: boolean,
-  customUTMConfig?: { enabled?: boolean; keyMapping?: Record<string, string | undefined> }
-): boolean {
-  if (hasUTMParameters(url, customUTMConfig)) {
-    return true;
-  }
+  customUTMConfig?: { enabled?: boolean; keyMapping?: Record<string, string> }
+): CaptureFlags {
+  const hasUTM = hasUTMParameters(url, customUTMConfig);
+  const isExternal = referrer ? isExternalReferrer(referrer, url.hostname) : false;
+  
 
-  if (referrer && isExternalReferrer(referrer, url.hostname)) {
-    return true;
-  }
+  const captureFirst = !existingFirstTouch && (hasUTM || isExternal || (!referrer && !isPageReload));
 
-  if (!existingFirstTouch && !referrer && !isPageReload) {
-    return true;
-  }
+  const captureLast = hasUTM || isExternal;
 
-  return false;
+  return {
+    captureFirst,
+    captureLast,
+  };
 }
 
-export function hasUTMParameters(url: URL, customUTMConfig?: { enabled?: boolean; keyMapping?: Record<string, string | undefined> }): boolean {
+export function hasUTMParameters(url: URL, customUTMConfig?: { enabled?: boolean; keyMapping?: Record<string, string> }): boolean {
   const standardParams = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'];
   
   if (standardParams.some(param => url.searchParams.has(param))) {
@@ -74,7 +83,7 @@ export function isExternalReferrer(referrer: string, currentHostname: string): b
 export function parseAttributionFromURL(
   url: URL,
   referrer: string | null,
-  customUTMConfig?: { enabled?: boolean; prefix?: string; allowedKeys?: string[]; keyMapping?: Record<string, string | undefined>; customParams?: { enabled?: boolean; keys?: string[]; parseJSON?: boolean; namespace?: string } }
+  customUTMConfig?: { enabled?: boolean; prefix?: string; allowedKeys?: string[]; keyMapping?: Record<string, string>; customParams?: { enabled?: boolean; keys?: string[]; parseJSON?: boolean; namespace?: string } }
 ): Attribution {
   let source: string | null = null;
   let medium: string | null = null;
@@ -218,7 +227,8 @@ function parseMediumFromReferrer(referrer: string | null): string | null {
 
 export function shouldAppendToJourney(
   currentAttribution: Attribution,
-  lastJourneyEntry: JourneyEntry | null
+  lastJourneyEntry: JourneyEntry | null,
+  dedupWindow?: number
 ): boolean {
   if (!lastJourneyEntry) {
     return true;
@@ -237,7 +247,8 @@ export function shouldAppendToJourney(
   }
 
   const timeDiff = currentAttribution.timestamp - lastJourneyEntry.timestamp;
-  if (timeDiff < JOURNEY_DEDUP_WINDOW) {
+  const dedupWindowMs = dedupWindow ?? getJourneyDedupWindow();
+  if (timeDiff < dedupWindowMs) {
     return false;
   }
 

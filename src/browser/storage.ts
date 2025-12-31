@@ -60,7 +60,30 @@ export function getSessionIdKey(): string {
 }
 
 export function generateSessionId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+  if (typeof window === 'undefined') {
+    return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}-${Math.random().toString(36).substring(2, 15)}`;
+  }
+
+  const cryptoObj = window.crypto || (globalThis as any).crypto;
+  
+  if (cryptoObj?.randomUUID) {
+    try {
+      return cryptoObj.randomUUID();
+    } catch {
+    }
+  }
+  
+  if (cryptoObj?.getRandomValues) {
+    try {
+      const array = new Uint8Array(16);
+      cryptoObj.getRandomValues(array);
+      const hex = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+      return `${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}`;
+    } catch {
+    }
+  }
+  
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}-${Math.random().toString(36).substring(2, 15)}`;
 }
 
 const SESSION_TIMEOUT = 30 * 60 * 1000;
